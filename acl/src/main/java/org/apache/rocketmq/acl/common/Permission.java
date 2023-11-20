@@ -89,6 +89,9 @@ public class Permission {
         }
     }
 
+    //liqinglong: 更新【ACL】的【topic和group权限】时的验证
+    //对于【topic】和【group】至少都至少需要保留一个权限配置，不能为空
+    //要删除所有权限需要删除整个【ACL】
     public static void checkResourcePerms(List<String> resources) {
         if (resources == null || resources.isEmpty()) {
             return;

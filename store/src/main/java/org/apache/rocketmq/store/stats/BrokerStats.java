@@ -38,10 +38,13 @@ public class BrokerStats {
         this.defaultMessageStore = defaultMessageStore;
     }
 
+    //liqinglong: 记录单个个broker【当前日期的生产和消费进】以及【最近一天的生产消费总量】
     public void record() {
+        //liqinglong: 先将昨天的进度记录下俩再更新今天的进度
         this.msgPutTotalYesterdayMorning = this.msgPutTotalTodayMorning;
         this.msgGetTotalYesterdayMorning = this.msgGetTotalTodayMorning;
-
+        //liqinglong: 此处直接获取【putMessageTimesTotal】和【getMessageTransferedMsgCount】的值
+        //这两个指标的赋值分别在【CommitLog.asyncPutMessage】和【DefaultMessageStore.getMessage】中
         this.msgPutTotalTodayMorning =
             this.defaultMessageStore.getStoreStatsService().getPutMessageTimesTotal();
         this.msgGetTotalTodayMorning =
