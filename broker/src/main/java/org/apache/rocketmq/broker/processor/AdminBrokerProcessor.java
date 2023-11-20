@@ -1426,6 +1426,11 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor {
         return response;
     }
 
+    //liqinglong: 准备【单个broker的运行指标信息】
+    //【定时运行指标】都在缓存在【BrokerController】的【BrokerStats】中
+    //【BrokerStats】会定时去【StoreStatusService】中获取所需指标并记录
+    //【StoreStatusService】缓存了实时指标
+    //【StoreStatusService】中指标的赋值在【DefaultMessageStore】【CommitLog】中
     private HashMap<String, String> prepareRuntimeInfo() {
         HashMap<String, String> runtimeInfo = this.brokerController.getMessageStore().getRuntimeInfo();
         runtimeInfo.put("brokerVersionDesc", MQVersion.getVersionDesc(MQVersion.CURRENT_VERSION));

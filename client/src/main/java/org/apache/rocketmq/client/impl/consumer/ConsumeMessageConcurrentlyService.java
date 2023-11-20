@@ -198,6 +198,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         final boolean dispatchToConsume) {
         final int consumeBatchSize = this.defaultMQPushConsumer.getConsumeMessageBatchMaxSize();
         //liqinglong: 一个线程处理的消息数量不能超过【consumeBatchSize】
+        //默认【consumeBatchSize=1】，即一次处理一条消息
         if (msgs.size() <= consumeBatchSize) {
             ConsumeRequest consumeRequest = new ConsumeRequest(msgs, processQueue, messageQueue);
             try {
@@ -243,14 +244,17 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         }
     }
 
-    //liqinglong: 根据【consumeRquest】任务执行的最终状态对结果进行处理
-    //状态为成功【CONSUME_SUCCESS】或则稍后处理【RECONSUME_LATER】则记录成功或失败的【TPS】
-    //其他状态视为消费异常，会根据消费模式做不通处理
+    //liqinglong: 根据【consumeRquest】任务执行的最终状态和消费模式对结果进行处理
+    //记录成功或失败的【TPS】
+    //对【RECONSUME_LATER】的消息，如果是【集群模式】则执行【重试逻辑】
     public void processConsumeResult(
         final ConsumeConcurrentlyStatus status,
         final ConsumeConcurrentlyContext context,
         final ConsumeRequest consumeRequest
     ) {
+        //liqinglong: 【ackIndex】用于区分消费成功还是失败
+        //初始值=【Integer.MAX_VALUE】
+        //下面的两个【switch】中使用【ackIndex】来控制哪些执行哪些逻辑
         int ackIndex = context.getAckIndex();
 
         if (consumeRequest.getMsgs().isEmpty())
@@ -258,6 +262,8 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
         switch (status) {
             case CONSUME_SUCCESS:
+                //liqnglong: 如果成功则将【ackIndex】置为【msgsize - 1】
+                //这样在下一个【switch的for】中由于【i=ackIndex + 1】导致循环次数为【0】，也就是不会执行
                 if (ackIndex >= consumeRequest.getMsgs().size()) {
                     ackIndex = consumeRequest.getMsgs().size() - 1;
                 }
@@ -267,16 +273,17 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                 this.getConsumerStatsManager().incConsumeFailedTPS(consumerGroup, consumeRequest.getMessageQueue().getTopic(), failed);
                 break;
             case RECONSUME_LATER:
+                //liqinglong: 将【ackIndex】置为【-1】
+                //这样在下一个【switch的for】中由于【i=ackIndex + 1】，所以会循环遍历所有消息执行【重试逻辑】
                 ackIndex = -1;
-                //liqinglong: 【RECONSUME_LATER】状态表示客户端明确知道该批消息消费失败，会稍后自行处理，无需消费服务的干预
-                //所以此处仅仅做了失败【TPS】的记录，未做其他处理
+                //liqinglong: 此处仅仅做了失败【TPS】的记录，【重试逻辑】将在下一个【switch】处理
                 this.getConsumerStatsManager().incConsumeFailedTPS(consumerGroup, consumeRequest.getMessageQueue().getTopic(),
                     consumeRequest.getMsgs().size());
                 break;
             default:
                 break;
         }
-        //liqinglong: 处理消费状态既不是【CONSUME_SUCCESS】也不是【RECONSUME_LATER】的所有消息
+        //liqinglong: 处理消费状态为【RECONSUME_LATER】的所有消息
         //注意：消息处理事分批处理的，即【consumeRequest.getMsgs()】作为一个整体一起处理，要么都成功，要么都失败
         switch (this.defaultMQPushConsumer.getMessageModel()) {
             //liqinglong: 广播模式失败则打印 log，不做任何操作

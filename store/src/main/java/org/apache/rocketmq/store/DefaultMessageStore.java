@@ -680,7 +680,8 @@ public class DefaultMessageStore implements MessageStore {
                                 selectResult.release();
                                 continue;
                             }
-
+                            //liqinglong: 消息拉取成功则将当前【消费组】的【消费进度】递增
+                            //用于存储消费进度
                             this.storeStatsService.getGetMessageTransferedMsgCount().add(1);
                             getResult.addMessage(selectResult);
                             status = GetMessageStatus.FOUND;

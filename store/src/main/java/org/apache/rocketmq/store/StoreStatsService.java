@@ -262,7 +262,10 @@ public class StoreStatsService extends ServiceThread {
     }
 
     public long getPutMessageTimesTotal() {
+        //liqinglong: 【putMessageTopicTimesTotal】是一个以品【topic为键】【singlePutMessageTopicTimesTotal为值】的【map】
         Map<String, LongAdder> map = putMessageTopicTimesTotal;
+        //liqinglong: 对【putMessageTopicTimesTotal】中的所有【singlePutMessageTopicTimesTotal】求和以获取【所有topic在当前broker的的生产总量】
+        //【singlePutMessageTopicTimesTotal】的赋值在【CommitLog.asyncPutMessage】中
         return map.values()
                 .parallelStream()
                 .mapToLong(LongAdder::longValue)
@@ -629,6 +632,8 @@ public class StoreStatsService extends ServiceThread {
         return rs;
     }
 
+    //liqinglong: 获取【单个topic的消息总量】
+    //【singlePutMessageTopicTimesTotal】的赋值在【CommitLog.asyncPutMessage】中
     public LongAdder getSinglePutMessageTopicTimesTotal(String topic) {
         LongAdder rs = putMessageTopicTimesTotal.get(topic);
         if (null == rs) {
