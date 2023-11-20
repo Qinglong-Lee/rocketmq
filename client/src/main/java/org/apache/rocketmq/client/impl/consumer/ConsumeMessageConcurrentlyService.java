@@ -189,7 +189,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         return result;
     }
 
-    //liqinglong: 生成一个消息处理请求并提交到线程池处理
+    //liqinglong: 生成【单个队列】的消息处理请求并提交到线程池处理
     @Override
     public void submitConsumeRequest(
         final List<MessageExt> msgs,
@@ -390,7 +390,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                 log.info("the message queue not be able to consume, because it's dropped. group={} {}", ConsumeMessageConcurrentlyService.this.consumerGroup, this.messageQueue);
                 return;
             }
-
+            //liqinglong: 客户端实现的【监听器】，是真正的【业务处理】
             MessageListenerConcurrently listener = ConsumeMessageConcurrentlyService.this.messageListener;
             ConsumeConcurrentlyContext context = new ConsumeConcurrentlyContext(messageQueue);
             ConsumeConcurrentlyStatus status = null;
@@ -417,6 +417,8 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                         MessageAccessor.setConsumeStartTimeStamp(msg, String.valueOf(System.currentTimeMillis()));
                     }
                 }
+                //liqinglong: 执行【客户端监听器重写的业务逻辑】
+                //liqinglongTODO: 最终消费的还是【msgs】而不是【processQueue 中的消息】？【processQueue】具体作用是？
                 status = listener.consumeMessage(Collections.unmodifiableList(msgs), context);
             } catch (Throwable e) {
                 log.warn(String.format("consumeMessage exception: %s Group: %s Msgs: %s MQ: %s",

@@ -297,7 +297,8 @@ public abstract class RebalanceImpl {
                     if (allocateResult != null) {
                         allocateResultSet.addAll(allocateResult);
                     }
-
+                    //liqinglong: 完成队列重新分配后还需要更新每个【消息队列对应的处理队列】
+                    //因为两者是一一对应的
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, allocateResultSet, isOrder);
                     if (changed) {
                         log.info(
@@ -369,6 +370,8 @@ public abstract class RebalanceImpl {
 
         List<PullRequest> pullRequestList = new ArrayList<PullRequest>();
         for (MessageQueue mq : mqSet) {
+            //liqinglong: 如果当前【消息队列 mq】是新分配的，则需要为其分配新的【处理队列 pq】
+            //【processQueueTable】是【mq 到 pq 的映射表】，用于维护两者的映射关系，便于更新
             if (!this.processQueueTable.containsKey(mq)) {
                 if (isOrder && !this.lock(mq)) {
                     log.warn("doRebalance, {}, add a new mq failed, {}, because lock failed", consumerGroup, mq);
@@ -376,6 +379,8 @@ public abstract class RebalanceImpl {
                 }
 
                 this.removeDirtyOffset(mq);
+                //liqignlong: 为每个【消息队列 mq】分配一个【处理队列 pq】，即【一个 mq 对应一个 pq】
+                //倒数第二行会存放到【拉取请求队列 PullRequestQueue】中
                 ProcessQueue pq = new ProcessQueue();
                 pq.setLocked(true);
 
@@ -406,7 +411,9 @@ public abstract class RebalanceImpl {
                 }
             }
         }
-
+        //liqinglong: 此处会将【所有拉取请求 PullRequest】存入【PullMessageService 的 pullReqeustQueue】中
+        //在【MQClientInstance】启动时会启动【PullMessageService】线程，此线程会定时从【PullRequestQueue】中获取【拉取请求】执行拉取任务
+        //拉取到的【原始消息】将被存入【PullRequestQueue】中的【处理队列中】等待【ConsumeMessageService】的线程池处理
         this.dispatchPullRequest(pullRequestList);
 
         return changed;

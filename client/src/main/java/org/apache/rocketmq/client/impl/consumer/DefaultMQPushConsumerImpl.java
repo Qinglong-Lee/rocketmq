@@ -216,6 +216,8 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         this.offsetStore = offsetStore;
     }
 
+    //liqinglong: 此方法用于拉取【单个队列】的消息并存入【处理队列中】
+    //利用【回调 PullCallback】进行【消息拉取后的消费】
     public void pullMessage(final PullRequest pullRequest) {
         final ProcessQueue processQueue = pullRequest.getProcessQueue();
         if (processQueue.isDropped()) {
@@ -244,6 +246,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
 
         if (cachedMessageCount > this.defaultMQPushConsumer.getPullThresholdForQueue()) {
             this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_CACHE_FLOW_CONTROL);
+            //liqinglongTODO: 为什么【小于1000次才打印日志】，【大于1000次】会怎样？
             if ((queueFlowControlTimes++ % 1000) == 0) {
                 log.warn(
                     "the cached message count exceeds the threshold {}, so do flow control, minOffset={}, maxOffset={}, count={}, size={} MiB, pullRequest={}, flowControlTimes={}",
@@ -334,7 +337,10 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
 
                                 DefaultMQPushConsumerImpl.this.getConsumerStatsManager().incPullTPS(pullRequest.getConsumerGroup(),
                                     pullRequest.getMessageQueue().getTopic(), pullResult.getMsgFoundList().size());
-
+                                //liqinglong: 拉取到的【当前队列的所有消息】存入【处理队列】中
+                                //注意这里存的是【msg】的地址，即并不是将【msg】原封不动地拷贝一份到【processQueue】，因此最终还是一份【msg】
+                                //liqinglongTODO: 在消息【消费完毕】后会在【ConsumeMessageConcurrentlyService.processConsumeResult】最后调用【consumeRequest.getProcessQueue().removeMessage】删除【processQueue】中的消息
+                                //这里仅仅是【清除了 ProcessQueue.msgTreeMap 中的消息引用】，消息还是缓存在内存中，那么什么时候会被清除？GC?
                                 boolean dispatchToConsume = processQueue.putMessage(pullResult.getMsgFoundList());
                                 //liqinglong: 拉取到的消息传递给消息消费服务进行处理
                                 DefaultMQPushConsumerImpl.this.consumeMessageService.submitConsumeRequest(
@@ -342,7 +348,10 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                                     processQueue,
                                     pullRequest.getMessageQueue(),
                                     dispatchToConsume);
-
+                                //liqinglong: 【提交消费后】根据【拉取频率配置】再次提交【拉取请求】到【PullMessageService 的 pullRequestQueue】中
+                                //因为【pullRequestQueue】是一个【LinkedBlockingQueue】，拉取的时候会调用【pullRequestQueue.take】,此方法将【取出一个元素并删除】
+                                //因此需要【重新 put】
+                                //liqinglongTODO: 既然如此为什么非要用【队列存储拉取请求】，为何不用【List 等其他获取元素不会删除的数据结构】？毕竟【队列的更新是少数情况】
                                 if (DefaultMQPushConsumerImpl.this.defaultMQPushConsumer.getPullInterval() > 0) {
                                     DefaultMQPushConsumerImpl.this.executePullRequestLater(pullRequest,
                                         DefaultMQPushConsumerImpl.this.defaultMQPushConsumer.getPullInterval());
