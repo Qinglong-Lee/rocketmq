@@ -81,10 +81,19 @@ public class RebalancePushImpl extends RebalanceImpl {
         this.getmQClientFactory().sendHeartbeatToAllBrokerWithLock();
     }
 
+    //liqinglong: 删除不必要的【消息队列】
+    //此处只针对【集群模式】，因为广播模式的【LocalOffsetStore.persist】和【LocalOffsetStore.removeOffset】都是空方法
+    //集群模式的【offsetStore】是【RemoteBrokerOffsetStore】，即【消费偏移量存在 broker】
+    //【客户端】会缓存【分配到的队列的偏移量】并在合适时机【同步到 broker】，即【persist】；【负载均衡】后还会根据结果【更新缓存】，所以需要【removeOffset】
+    //广播模式的【offsetStore】是【LocalOffsetStore】，即【消费偏移量存在客户端】，不存在【同步到 broker】的情况，因此无需【persist】来【持久化单个队列】，只需【persistAll】来持久化所有队列到本地
+    //广播模式获取的是【全量消息】因此不存在【负载均衡导致缓存更新】，所以无需【removeOffset】
     @Override
     public boolean removeUnnecessaryMessageQueue(MessageQueue mq, ProcessQueue pq) {
+        //liqnglong: 先将【消息队列】的当前偏移量同步到【broker】
         this.defaultMQPushConsumerImpl.getOffsetStore().persist(mq);
+        //liqinglong: 再【清除消息队列再本地的偏移量缓存】
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
+        //liqinglongTODO: 对于【集群模式的顺序消费】，以下逻辑在干嘛？
         if (this.defaultMQPushConsumerImpl.isConsumeOrderly()
             && MessageModel.CLUSTERING.equals(this.defaultMQPushConsumerImpl.messageModel())) {
             try {

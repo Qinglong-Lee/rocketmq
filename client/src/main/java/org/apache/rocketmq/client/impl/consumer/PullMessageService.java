@@ -29,6 +29,8 @@ import org.apache.rocketmq.common.utils.ThreadUtils;
 
 public class PullMessageService extends ServiceThread {
     private final InternalLogger log = ClientLogger.getLog();
+    //liqinglong: 【拉取请求队列】，用于存放【所有拉取请求】，等待被【取出并执行拉取任务】
+    //【PullRequest】是【消息队列到处理队列的映射对象】，拉取到的消息将会被存入对应【消息所在队列】的【处理队列中】，等待被【处理（消费）】
     private final LinkedBlockingQueue<PullRequest> pullRequestQueue = new LinkedBlockingQueue<PullRequest>();
     private final MQClientInstance mQClientFactory;
     private final ScheduledExecutorService scheduledExecutorService = Executors
@@ -93,6 +95,9 @@ public class PullMessageService extends ServiceThread {
         //这也是为什么【pushConsumer】可以实时获取消息的原因，因为对【pullConsumer】的长轮询消息获取做了封装
         while (!this.isStopped()) {
             try {
+                //liqinglong: 由于【pullRequestQueue.take()】会【获取并删除】，因此【下次拉取就不存在已经拉取过的队列的 PullRequest】
+                //所以在【pullMessage】方法中会调用【DefaultMQPushConsumerImpl.pullMessage】
+                //此方法中的【PullCallback】会在提交【消费】后根据【拉取频率配置】再次将【当前队列的 PullRequest】添加进【pullRequestQueue】
                 PullRequest pullRequest = this.pullRequestQueue.take();
                 this.pullMessage(pullRequest);
             } catch (InterruptedException ignored) {
