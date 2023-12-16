@@ -1087,6 +1087,8 @@ public class MQClientAPIImpl {
         final Boolean isUnqiueKey
     ) throws RemotingException, MQBrokerException, InterruptedException {
         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.QUERY_MESSAGE, requestHeader);
+        //liqinglong: 在【4.9.3】及之前版本，客户端传入【broker】的【acl 签名】不包含【UNIQUE_MSG_QUERY_FLAG】，【broker】计算签名时也会排除
+        //但是从【4.9.4】开始包含了此属性，因此这类查询会报【acl验证错误】，在【5以上版本】做了修复，【broker】不再排除此属性
         request.addExtField(MixAll.UNIQUE_MSG_QUERY_FLAG, isUnqiueKey.toString());
         this.remotingClient.invokeAsync(MixAll.brokerVIPChannel(this.clientConfig.isVipChannelEnabled(), addr), request, timeoutMillis,
             invokeCallback);

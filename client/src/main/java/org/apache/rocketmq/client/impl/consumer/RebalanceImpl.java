@@ -330,11 +330,16 @@ public abstract class RebalanceImpl {
         }
     }
 
+    //liqinglong: 根据【负载均衡分配到的队列集合】更新【处理队列映射表 processQueueTable】
+    //【更新】分为两部分：
+    //1.对于【processQueueTable 中有但 mqSet 中没有的】，丢弃【processQueueTable】中相应的数据
+    //2.对于【processQueueTable 中没有有但 mqSet 中有的】，新建【processQueue】并添加到【processQueueTable】
     private boolean updateProcessQueueTableInRebalance(final String topic, final Set<MessageQueue> mqSet,
         final boolean isOrder) {
         boolean changed = false;
 
         Iterator<Entry<MessageQueue, ProcessQueue>> it = this.processQueueTable.entrySet().iterator();
+        //liqinglong: 对于【processQueueTable 中有但 mqSet 中没有的】，丢弃【processQueueTable】中相应的数据
         while (it.hasNext()) {
             Entry<MessageQueue, ProcessQueue> next = it.next();
             MessageQueue mq = next.getKey();
@@ -342,13 +347,18 @@ public abstract class RebalanceImpl {
 
             if (mq.getTopic().equals(topic)) {
                 if (!mqSet.contains(mq)) {
+                    //liqinglong: 标识此【处理队列】以丢弃
+                    //liqinglongTODO: 如果【removeUnnecessaryMessageQueue】失败，【it.remove()】也就不会执行，那此【处理队列】会怎样？
                     pq.setDropped(true);
                     if (this.removeUnnecessaryMessageQueue(mq, pq)) {
+                        //liqinglong: 丢弃【processQueueTable】中相应的【processQueue】
+                        //被丢弃的【processQueue】由于没有了【GCroot】关联，将被【GC】
                         it.remove();
                         changed = true;
                         log.info("doRebalance, {}, remove unnecessary mq, {}", consumerGroup, mq);
                     }
                 } else if (pq.isPullExpired()) {
+                    //liqinglongTODO: 【处理队列过期】是什么意思？为什么会过期？有什么意义？有什么影响
                     switch (this.consumeType()) {
                         case CONSUME_ACTIVELY:
                             break;
@@ -369,6 +379,8 @@ public abstract class RebalanceImpl {
         }
 
         List<PullRequest> pullRequestList = new ArrayList<PullRequest>();
+
+        //liqinglong: 对于【processQueueTable 中没有有但 mqSet 中有的】，新建【processQueue】并添加到【processQueueTable】
         for (MessageQueue mq : mqSet) {
             //liqinglong: 如果当前【消息队列 mq】是新分配的，则需要为其分配新的【处理队列 pq】
             //【processQueueTable】是【mq 到 pq 的映射表】，用于维护两者的映射关系，便于更新

@@ -243,6 +243,9 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
      *
      * If messages are re-consumed more than {@link #maxReconsumeTimes} before success.
      */
+    //liqinglong: 消费最大重试次数
+    //【并行消费】默认为【16】，每次重试按【broker中messageDelayLevel】配置延迟从【重试队列】拉取，【10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h】，大于【16】此每次都延迟【2h】
+    //【顺序消费】默认为【无限次】，即顺序消费如果某个消息消费被阻塞会无限阻塞后面的消息的消费，目的是为了确保【消费的顺序性】
     private int maxReconsumeTimes = -1;
 
     /**

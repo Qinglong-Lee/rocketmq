@@ -109,6 +109,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
      */
+    //liqinglong: 消息发送重试次数
+    //【同步发送】默认为【3次】，【异步发送】默认为【1次】
+    //在【DefaultMQProducerImpl.sendDefaultImpl】中计算的【实际重试次数】
     private int retryTimesWhenSendFailed = 2;
 
     /**

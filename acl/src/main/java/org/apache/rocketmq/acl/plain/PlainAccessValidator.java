@@ -138,6 +138,8 @@ public class PlainAccessValidator implements AccessValidator {
         SortedMap<String, String> map = new TreeMap<String, String>();
         for (Map.Entry<String, String> entry : request.getExtFields().entrySet()) {
             if (!SessionCredentials.SIGNATURE.equals(entry.getKey())
+                //liqinglong: 在【4.9.3】及之前版本，客户端传入【broker】的【acl 签名】不包含【UNIQUE_MSG_QUERY_FLAG】，所以这里将此排除
+                //但是从【4.9.4】开始包含了此属性，因此这类查询会报【acl验证错误】，在【5以上版本】做了修复，将此条件移除
                 && !MixAll.UNIQUE_MSG_QUERY_FLAG.equals(entry.getKey())) {
                 map.put(entry.getKey(), entry.getValue());
             }

@@ -425,7 +425,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                     }
                 }
                 //liqinglong: 执行【客户端监听器重写的业务逻辑】
-                //liqinglongTODO: 最终消费的还是【msgs】而不是【processQueue 中的消息】？【processQueue】具体作用是？
+                //直接将【msgs】传递用于实际消费，因为【processQueue 中的消息】也是【msgs】中消息的引用，实际是一个
                 status = listener.consumeMessage(Collections.unmodifiableList(msgs), context);
             } catch (Throwable e) {
                 log.warn(String.format("consumeMessage exception: %s Group: %s Msgs: %s MQ: %s",
