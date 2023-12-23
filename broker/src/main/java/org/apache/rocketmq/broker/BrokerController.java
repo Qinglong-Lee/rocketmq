@@ -889,6 +889,11 @@ public class BrokerController {
             @Override
             public void run() {
                 try {
+                    //liqinglong: 在【nameserver的RouteInfoManager.registerBroker】中
+                    //如果【broker的topic配置信息有变化】或者是【第一次注册】，才会更新【broker的路由信息（queueData）】
+                    //因此对于【DefaultMQAdminExt.wipeWritePermOfBroker】类似的方法，这些方法是直接更新【nameserver中的路由信息】，不会造成【broker中topic配置信息的变化】
+                    //所以即使 broker 会定时发送心跳包到 nameserver，也【不会】覆盖这些配置的更新
+                    //除非【broker重启】或【nameserver重启】
                     BrokerController.this.registerBrokerAll(true, false, brokerConfig.isForceRegister());
                 } catch (Throwable e) {
                     log.error("registerBrokerAll Exception", e);
@@ -907,8 +912,13 @@ public class BrokerController {
 
     }
 
+    //liqinglong: 当【topic 创建或配置更新时】向【nameserver】重新注册路由信息
     public synchronized void registerIncrementBrokerData(TopicConfig topicConfig, DataVersion dataVersion) {
         TopicConfig registerTopicConfig = topicConfig;
+        //liqinglong: 如果【broker 权限（brokerpermission 配置中的 brokerpermission 属性）】不是【即可读也可写】
+        //则将【nameserver 的路由信息】中的所有【topic 权限】设置为【当前 broker权限】，否则【延用 topic 本身权限】
+        //在【dashboard】表现为：如果配置【broker 权限为 6】，则【topic 最终权限取决于 topic 本身的权限配置】
+        //如果配置【broker 权限 < 6】，则【topic 最终权限取决于 broker 权限】
         if (!PermName.isWriteable(this.getBrokerConfig().getBrokerPermission())
             || !PermName.isReadable(this.getBrokerConfig().getBrokerPermission())) {
             registerTopicConfig =
@@ -925,9 +935,14 @@ public class BrokerController {
         doRegisterBrokerAll(true, false, topicConfigSerializeWrapper);
     }
 
+    //liqinglong: 向【nameserver】注册【broker 心跳包】
     public synchronized void registerBrokerAll(final boolean checkOrderConfig, boolean oneway, boolean forceRegister) {
+        //liqinglong: 首先获取【所有 topic 的配置信息】
         TopicConfigSerializeWrapper topicConfigWrapper = this.getTopicConfigManager().buildTopicConfigSerializeWrapper();
-
+        //liqinglong: 如果【broker 权限（brokerpermission 配置中的 brokerpermission 属性）】不是【即可读也可写】
+        //则将【nameserver 的路由信息】中的所有【topic 权限】设置为【当前 broker权限】，否则【延用 topic 本身权限】
+        //在【dashboard】表现为：如果配置【broker 权限为 6】，则【topic 最终权限取决于 topic 本身的权限配置】
+        //如果配置【broker 权限 < 6】，则【topic 最终权限取决于 broker 权限】
         if (!PermName.isWriteable(this.getBrokerConfig().getBrokerPermission())
             || !PermName.isReadable(this.getBrokerConfig().getBrokerPermission())) {
             ConcurrentHashMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<>();

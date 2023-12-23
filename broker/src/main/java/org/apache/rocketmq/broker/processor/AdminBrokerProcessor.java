@@ -272,9 +272,12 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor {
         topicConfig.setTopicFilterType(requestHeader.getTopicFilterTypeEnum());
         topicConfig.setPerm(requestHeader.getPerm());
         topicConfig.setTopicSysFlag(requestHeader.getTopicSysFlag() == null ? 0 : requestHeader.getTopicSysFlag());
-
+        //liqinglong: 先更新【topic 配置】
         this.brokerController.getTopicConfigManager().updateTopicConfig(topicConfig);
-
+        //liqinglong: 再向【nameserver】注册【路由信息】
+        //【路由信息】中的【权限】有可能不同于【topic perm】
+        //对应【dashboard】中【topic 菜单】的【Router】和【topic config】弹窗中的【perm】
+        //而客户端最终是靠【从 nameserver 获取的路由信息中的 perm】来决定【读写权限】的
         this.brokerController.registerIncrementBrokerData(topicConfig, this.brokerController.getTopicConfigManager().getDataVersion());
 
         response.setCode(ResponseCode.SUCCESS);

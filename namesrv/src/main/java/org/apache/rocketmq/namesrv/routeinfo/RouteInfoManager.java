@@ -182,6 +182,10 @@ public class RouteInfoManager {
 
                 if (null != topicConfigWrapper
                         && MixAll.MASTER_ID == brokerId) {
+                    //liqinglong: 如果【broker的topic配置信息有变化】或者是【第一次注册】，才会更新【broker的路由信息（queueData）】
+                    //因此对于【DefaultMQAdminExt.wipeWritePermOfBroker】类似的方法，这些方法是直接更新【nameserver中的路由信息】，不会造成【broker中topic配置信息的变化】
+                    //所以即使 broker 会定时发送心跳包到 nameserver，也【不会】覆盖这些配置的更新
+                    //除非【broker重启】或【nameserver重启】
                     if (this.isBrokerTopicConfigChanged(brokerAddr, topicConfigWrapper.getDataVersion())
                             || registerFirst) {
                         ConcurrentMap<String, TopicConfig> tcTable =
