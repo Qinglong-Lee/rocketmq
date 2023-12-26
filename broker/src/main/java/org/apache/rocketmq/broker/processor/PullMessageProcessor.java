@@ -133,7 +133,15 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor {
             response.setRemark(String.format("topic[%s] not exist, apply first please! %s", requestHeader.getTopic(), FAQUrl.suggestTodo(FAQUrl.APPLY_TOPIC_URL)));
             return response;
         }
-
+        //liqinglong: 对于消费者的【读权限控制】，首先会在【broker 注册到 nameserver 上的路由信息】上做文章
+        //具体逻辑是【如果 brokerpermission 可读可写，则按 topic perm 设置路由权限；否则按照 brokerpermission 设置路由权限】
+        //然后在【拉取消息】的时候又在这里做了【topic perm 的校验】
+        //即对于消费者，【读权限控制取决于 brokerpermission 和 topic perm 的交集】，任意一个没有读权限则消费者不消费
+        //而对于生产者，【写权限控制仅取决于路由权限】
+        //猜想之所以生产者消费者不同逻辑是为了【权限切换对客户端无感知】
+        //即对于生产者，如果在【broker 端控制写权限】，会导致生产者写入异常，影响客户端
+        //而只使用【路由信息】让生产者延迟感知，虽然会导致【权限切管后不会立即生效，需等待路由信息更新】，但也不会影响生产者正常发送，路由信息更新后就会自动切换到【其他 broker】
+        //对于消费者，拉取不到消息不回影响消费者进程正常运行，因此在【broker 加以控制】
         if (!PermName.isReadable(topicConfig.getPerm())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("the topic[" + requestHeader.getTopic() + "] pulling message is forbidden");

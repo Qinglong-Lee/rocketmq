@@ -54,7 +54,7 @@ import org.apache.rocketmq.srvutil.AclFileWatchService;
 public class PlainPermissionManager {
 
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.COMMON_LOGGER_NAME);
-
+    //liqinglong: 进程运行主目录，用于多个进程运行在同一个主目录时进程之间的配置和数据的隔离
     private String fileHome = System.getProperty(MixAll.ROCKETMQ_HOME_PROPERTY,
         System.getenv(MixAll.ROCKETMQ_HOME_ENV));
 
@@ -83,6 +83,7 @@ public class PlainPermissionManager {
 
     public PlainPermissionManager() {
         this.defaultAclDir = MixAll.dealFilePath(fileHome + File.separator + "conf" + File.separator + "acl");
+        //liqinglong: 可以通过【filehome】或【rocketmq.acl.plain.file】来加载不同的【ACL】，用于【ACL数据隔离】
         this.defaultAclFile = MixAll.dealFilePath(fileHome + File.separator + System.getProperty("rocketmq.acl.plain.file", "conf/plain_acl.yml"));
         load();
         watch();
