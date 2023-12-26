@@ -699,7 +699,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                 break;
         }
         //liqinglongTODO: 此方法会遍历在【RebalanceImpl】中注册的【订阅信息（topic+tag）】 <topic, SubscriptionData>，然后更新每个 topic 的路由信息
-        //该信息在应用程序配置消费这的 consumer.subscribe() 方法中被注册到 RebalanceImpl
+        //该信息在应用程序配置消费者的 consumer.subscribe() 方法中被注册到 RebalanceImpl
         this.updateTopicSubscribeInfoWhenSubscriptionChanged();
         //liqinglong: 校验订阅信息中的过滤类型（SQL92）在【broker】中是否支持，以及【SQL92】格式是否正确，对于【tag】类型，broker 将直接放行
         this.mQClientFactory.checkClientInBroker();

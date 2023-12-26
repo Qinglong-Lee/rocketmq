@@ -23,7 +23,8 @@ public class PlainAccessConfig {
     private String accessKey;
 
     private String secretKey;
-
+    //liqinglong: 用户级白名单，如果某个用户拥有该 ACL, 且在此白名单上，则不再验证【secretKey】和【topic/group perm】
+    //【AclConfig.globalWhiteAddrs】是【全局白名单】，对所有用户有效，用户甚至无需传递 ACL
     private String whiteRemoteAddress;
 
     private boolean admin;

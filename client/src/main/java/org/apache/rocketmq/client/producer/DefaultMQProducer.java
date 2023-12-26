@@ -109,9 +109,10 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
      */
-    //liqinglong: 消息发送重试次数
-    //【同步发送】默认为【3次】，【异步发送】默认为【1次】
-    //在【DefaultMQProducerImpl.sendDefaultImpl】中计算的【实际重试次数】
+    //liqinglong: 消息同步发送重试次数
+    //默认为【2次】，即最多发送三次
+    //在【DefaultMQProducerImpl.sendDefaultImpl】中通过循环发送实现
+    //需要配置【retryAnotherBrokerWhenNotStoreOK=true】（默认为【false】）
     private int retryTimesWhenSendFailed = 2;
 
     /**
@@ -119,11 +120,17 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
      */
+    //liqinglong: 消息异步发送重试次数
+    //默认为【2次】，即最多发送三次
+    //在【DefaultMQProducerImpl.sendDefaultImpl】中通过递归调用实现
+    //【this.sendKernelImpl > MQClientAPIImpl.sendMessage > [MQClientAPIImpl.sendMessageAsync] > MQClientAPIImpl.onExceptionImpl > [MQClientAPIImpl.sendMessageAsync]】
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
      * Indicate whether to retry another broker on sending failure internally.
      */
+    //liqinglong: 【同步发送】失败【是否选择领一个broker重试】
+    //仅用于同步发送
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**

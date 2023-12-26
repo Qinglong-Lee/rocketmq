@@ -500,6 +500,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     long costTime = System.currentTimeMillis() - beginStartTime;
                     if (timeout > costTime) {
                         try {
+                            //liqinglong: 【CommunicationMode】用于指定发送模式【同步/异步/单向】
+                            //在不同的【send】方法中传递不同模式
+                            //规律是：有【sendCallback】参数的方法是【ASYNC】，没有的是【SYNC】，【sendOneway】方法是【ONEWAY】
                             sendDefaultImpl(msg, CommunicationMode.ASYNC, sendCallback, timeout - costTime);
                         } catch (Exception e) {
                             sendCallback.onException(e);
@@ -552,8 +555,12 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             MessageQueue mq = null;
             Exception exception = null;
             SendResult sendResult = null;
-            //liqinglong: 消息发送重试次数
-            //【同步发送】默认为【3次】，【异步发送】默认为【1次】
+            //liqinglong: 消息发送重试机制
+            //【同步发送】默认循环【3次】，【异步发送】默认循环【1次】
+            //这里的意思是：
+            //同步发送的重试机制就在此循环中实现，若果成功则【break】，失败且需要重试（有的失败场景不会重试）则【continue】
+            //异步发送的重试机制不在此循环中实现，而是在【this.sendKernelImpl > MQClientAPIImpl.sendMessage > [MQClientAPIImpl.sendMessageAsync] > MQClientAPIImpl.onExceptionImpl > [MQClientAPIImpl.sendMessageAsync]】这样的递归调用中实现
+            //所以异步发送只需循环一次
             int timesTotal = communicationMode == CommunicationMode.SYNC ? 1 + this.defaultMQProducer.getRetryTimesWhenSendFailed() : 1;
             int times = 0;
             String[] brokersSent = new String[timesTotal];
@@ -580,10 +587,17 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, false);
                         switch (communicationMode) {
                             case ASYNC:
+                                //liqinglong: 对于【异步发送】，重试机制在【sendKernelImpl】中的递归调用实现，而且也没有【sendResult】可返回，因此直接返回【null】
                                 return null;
                             case ONEWAY:
+                                //liqinglong: 对于【单向发送】，没有重试机制，而且也没有【sendResult】可返回，因此直接返回【null】
                                 return null;
                             case SYNC:
+                                //liqinglong: 对于【同步发送】，如果
+                                //1.远程调用成功
+                                //2.响应状态不是 OK
+                                //3.retryAnotherBrokerWhenNotStoreOK=true（默认为【false】）
+                                //则会启动重试机制
                                 if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
                                     if (this.defaultMQProducer.isRetryAnotherBrokerWhenNotStoreOK()) {
                                         continue;
