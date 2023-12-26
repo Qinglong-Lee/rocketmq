@@ -302,6 +302,7 @@ public class PlainPermissionManager {
         return updateAclConfigMap;
     }
 
+    //liqinglong: 更新 ACL 配置
     public boolean updateAccessConfig(PlainAccessConfig plainAccessConfig) {
 
         if (plainAccessConfig == null) {
@@ -323,6 +324,7 @@ public class PlainPermissionManager {
                     if (account.get(AclConstants.CONFIG_ACCESS_KEY).equals(plainAccessConfig.getAccessKey())) {
                         // Update acl access config elements
                         accounts.remove(account);
+                        //liqinglong: 构造更新后的配置
                         updateAccountMap = createAclAccessConfigMap(account, plainAccessConfig);
                         accounts.add(updateAccountMap);
                         aclAccessConfigMap.put(AclConstants.CONFIG_ACCOUNTS, accounts);
@@ -392,6 +394,7 @@ public class PlainPermissionManager {
         }
     }
 
+    //liqinglong: 构造更新后的配置，之后会传递给【updateAclConfigFileVersion】用于更新
     public Map<String, Object> createAclAccessConfigMap(Map<String, Object> existedAccountMap,
         PlainAccessConfig plainAccessConfig) {
 
@@ -430,6 +433,9 @@ public class PlainPermissionManager {
         if (!StringUtils.isEmpty(plainAccessConfig.getDefaultGroupPerm())) {
             newAccountsMap.put(AclConstants.CONFIG_DEFAULT_GROUP_PERM, plainAccessConfig.getDefaultGroupPerm());
         }
+        //liqinglong: 对于【topicperms 和 groupperms】，如果传递的是【null】则不会做更新
+        //而如果传递是【空数组】在【Permission.checkResourcePerms】中会校验不通过
+        //所以要删除所有权限只能删除整个【ACL】
         if (plainAccessConfig.getTopicPerms() != null) {
             newAccountsMap.put(AclConstants.CONFIG_TOPIC_PERMS, plainAccessConfig.getTopicPerms());
         }
