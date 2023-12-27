@@ -565,7 +565,12 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             int times = 0;
             String[] brokersSent = new String[timesTotal];
             for (; times < timesTotal; times++) {
+                //liqinglong: 记录上一次发送的【broker】，用于同步发送的重试逻辑
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
+                //liqinglong: 选择一个发送队列
+                //会根据生产者配置的【sendLatencyFaultEnable】决定是否使用【延迟容错策略】，默认为【false】
+                //对于【同步发送】，因为会记录【lastBrokerName】，即上次失败的【broker】，所以默认会选择【另一个 broker】
+                //对于【异步发送】，因为只会循环一次，而第一次【lastBrokerName == null】，也就不会有选择【另一个 broker】这个逻辑
                 MessageQueue mqSelected = this.selectOneMessageQueue(topicPublishInfo, lastBrokerName);
                 if (mqSelected != null) {
                     mq = mqSelected;
@@ -579,9 +584,14 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         long costTime = beginTimestampPrev - beginTimestampFirst;
                         if (timeout < costTime) {
                             callTimeout = true;
+                            //liqinglong: 重试过程中一致在计算【从第一次发送开始的总耗时】
+                            //如果【总耗时超时】，则不再继续重试
                             break;
                         }
-
+                        //liqinglong: 消息发送
+                        //每次发送【远程调用】的超时时间为【timeout - costTime】，即【逐次递减】
+                        //这里【timeout 为 DefaultMQProducer.sendMsgTimeout】，默认为【3s】
+                        //【异步发送】在此方法中重试，而不是循环
                         sendResult = this.sendKernelImpl(msg, mq, communicationMode, sendCallback, topicPublishInfo, timeout - costTime);
                         endTimestamp = System.currentTimeMillis();
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, false);
@@ -596,7 +606,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                                 //liqinglong: 对于【同步发送】，如果
                                 //1.远程调用成功
                                 //2.响应状态不是 OK
-                                //3.retryAnotherBrokerWhenNotStoreOK=true（默认为【false】）
+                                //3.retryAnotherBrokerWhenNotStoreOK=true（默认为【false】），这个变量名起的有问题，看起来像【重试另一个broker】，但是实际作用仅仅是【控制是否重试】
                                 //则会启动重试机制
                                 if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
                                     if (this.defaultMQProducer.isRetryAnotherBrokerWhenNotStoreOK()) {
@@ -608,12 +618,16 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                             default:
                                 break;
                         }
+                    //liqinglong: 以下异常的重试机制都只适用于【同步发送】
+                    //【异步发送】的异常被【捕获并递归重试】
                     } catch (RemotingException e) {
                         endTimestamp = System.currentTimeMillis();
+                        //liqinglong: 根据【发送失败的耗时】更新【延迟容错策略】的【容错阈值】
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, true);
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【远程调用】异常会重试
                         continue;
                     } catch (MQClientException e) {
                         endTimestamp = System.currentTimeMillis();
@@ -621,6 +635,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【客户端】异常会重试
                         continue;
                     } catch (MQBrokerException e) {
                         endTimestamp = System.currentTimeMillis();
@@ -628,6 +643,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【Broker】异常并非都需要重试
+                        //生产者中定义了一批需要重试的【MQBrokerException 异常的响应码】，只有这些响应码会重试
+                        //对于【流控异常 RemotingSysResponseCode.SYSTEM_BUSY】，就不会重试，因为流控表示已经负载过大，再重试没必要
                         if (this.defaultMQProducer.getRetryResponseCodes().contains(e.getResponseCode())) {
                             continue;
                         } else {
@@ -645,6 +663,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         throw e;
                     }
                 } else {
+                    //liqinglong: 如果没有【消息队列】可选，也不会再次重试
                     break;
                 }
             }

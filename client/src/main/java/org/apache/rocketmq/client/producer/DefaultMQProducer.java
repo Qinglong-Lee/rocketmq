@@ -97,6 +97,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     /**
      * Timeout for sending messages.
      */
+    //liqinglong: 消息发送超时时间
+    //这里包括了【发送重试的时间】，即第一次发送加所有重试的【总耗时】
+    //在重试过程中也一直在计算【总耗时】，超过这个时间则不再重试
     private int sendMsgTimeout = 3000;
 
     /**
@@ -130,7 +133,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Indicate whether to retry another broker on sending failure internally.
      */
     //liqinglong: 【同步发送】失败【是否选择领一个broker重试】
+    //这个变量名起的有问题，看起来像【重试另一个broker】，但是实际作用仅仅是【控制是否重试】
     //仅用于同步发送
+    //默认是【false】，即【同步发送默认不重试】
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**
