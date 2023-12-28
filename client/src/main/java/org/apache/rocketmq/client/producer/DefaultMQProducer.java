@@ -65,6 +65,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      */
     protected final transient DefaultMQProducerImpl defaultMQProducerImpl;
     private final InternalLogger log = ClientLogger.getLog();
+
+    //liqinglong: 【同步发送】若【broker响应异常（MQBrokerException）】，则只有如下异常会重试
+    //其他异常不会重试，例如【流控异常 RemotingSysResponseCode.SYSTEM_BUSY】，就不会重试
     private final Set<Integer> retryResponseCodes = new CopyOnWriteArraySet<Integer>(Arrays.asList(
             ResponseCode.TOPIC_NOT_EXIST,
             ResponseCode.SERVICE_NOT_AVAILABLE,
@@ -97,6 +100,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     /**
      * Timeout for sending messages.
      */
+    //liqinglong: 消息发送超时时间，适用于【同步和异步】
+    //这里包括了【发送重试的时间】，即第一次发送加所有重试的【总耗时】
+    //在重试过程中也一直在计算【总耗时】，超过这个时间则不再重试
     private int sendMsgTimeout = 3000;
 
     /**
@@ -129,8 +135,11 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     /**
      * Indicate whether to retry another broker on sending failure internally.
      */
-    //liqinglong: 【同步发送】失败【是否选择领一个broker重试】
+    //liqinglong: 【同步发送】失败【是否重试】，如果重试则【选择另一个broker】
+    //这个变量名起的有误导性，看起来重点像【重试另一个 broker，而不是重试同一个 broker】，但是实际作用仅仅是【控制是否重试】，因为【同步的重试默认就是选择另一个 broker】
+    //猜想原本是想在此变量名中【既体现是否重试，也体现重试的另一个 broker】，但是却误导阅读者以为【只是控制是否重试另一个】
     //仅用于同步发送
+    //默认是【false】，即【同步发送默认不重试】
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**

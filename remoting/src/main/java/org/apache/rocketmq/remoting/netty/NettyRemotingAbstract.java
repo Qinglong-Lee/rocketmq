@@ -418,6 +418,7 @@ public abstract class NettyRemotingAbstract {
             channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture f) throws Exception {
+                    //liqinglongTODO: 【channel.writeAndFlush】什么怎样判断是否【success】的？
                     if (f.isSuccess()) {
                         responseFuture.setSendRequestOK(true);
                         return;

@@ -537,6 +537,11 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
     }
 
+    //liqinglong: 【不指定队列的消息发送】的实现类，包括【同步】【异步】【单向】
+    //【指定队列发送】直接调用【sendKernelImpl】
+    //其中【同步发送】的【重试逻辑】在此方法中体现
+    //【异步发送】的【重试逻辑】在【sendKernelImpl】中被此方法调用
+    //感觉这里将两者耦合在一起难以理解，因为【重试逻辑】完全不同
     private SendResult sendDefaultImpl(
         Message msg,
         final CommunicationMode communicationMode,
@@ -560,12 +565,18 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             //这里的意思是：
             //同步发送的重试机制就在此循环中实现，若果成功则【break】，失败且需要重试（有的失败场景不会重试）则【continue】
             //异步发送的重试机制不在此循环中实现，而是在【this.sendKernelImpl > MQClientAPIImpl.sendMessage > [MQClientAPIImpl.sendMessageAsync] > MQClientAPIImpl.onExceptionImpl > [MQClientAPIImpl.sendMessageAsync]】这样的递归调用中实现
-            //所以异步发送只需循环一次
+            //单向发送没有重试
+            //所以异步发送和单向发送只需循环一次
             int timesTotal = communicationMode == CommunicationMode.SYNC ? 1 + this.defaultMQProducer.getRetryTimesWhenSendFailed() : 1;
             int times = 0;
             String[] brokersSent = new String[timesTotal];
             for (; times < timesTotal; times++) {
+                //liqinglong: 记录上一次发送的【broker】，用于同步发送的重试逻辑
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
+                //liqinglong: 选择一个发送队列
+                //会根据生产者配置的【sendLatencyFaultEnable】决定是否使用【指数退避策略】，默认为【false】
+                //对于【同步发送】，因为会记录【lastBrokerName】，即上次失败的【broker】，所以默认会选择【另一个 broker】
+                //对于【异步发送】，因为只会循环一次，而第一次【lastBrokerName == null】，也就不会有选择【另一个 broker】这个逻辑
                 MessageQueue mqSelected = this.selectOneMessageQueue(topicPublishInfo, lastBrokerName);
                 if (mqSelected != null) {
                     mq = mqSelected;
@@ -579,9 +590,14 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         long costTime = beginTimestampPrev - beginTimestampFirst;
                         if (timeout < costTime) {
                             callTimeout = true;
+                            //liqinglong: 重试过程中一致在计算【从第一次发送开始的总耗时】
+                            //如果【总耗时超时】，则不再继续重试
                             break;
                         }
-
+                        //liqinglong: 消息发送
+                        //每次发送【远程调用】的超时时间为【timeout - costTime】，即【逐次递减】
+                        //这里【timeout 为 DefaultMQProducer.sendMsgTimeout】，默认为【3s】
+                        //【异步发送】在此方法中重试，而不是循环
                         sendResult = this.sendKernelImpl(msg, mq, communicationMode, sendCallback, topicPublishInfo, timeout - costTime);
                         endTimestamp = System.currentTimeMillis();
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, false);
@@ -596,8 +612,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                                 //liqinglong: 对于【同步发送】，如果
                                 //1.远程调用成功
                                 //2.响应状态不是 OK
-                                //3.retryAnotherBrokerWhenNotStoreOK=true（默认为【false】）
-                                //则会启动重试机制
+                                //3.retryAnotherBrokerWhenNotStoreOK=true（默认为【false】），这个变量名起的有问题，看起来像【重试另一个broker】，但是实际作用仅仅是【控制状态不 OK 时是否重试】
+                                //则重试
                                 if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
                                     if (this.defaultMQProducer.isRetryAnotherBrokerWhenNotStoreOK()) {
                                         continue;
@@ -608,12 +624,17 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                             default:
                                 break;
                         }
+                    //liqinglong: 以下异常的重试机制都只适用于【同步发送】
+                    //【异步发送】的异常被【捕获并递归重试】
+                    //【单向发送】虽然在请求过程中的额异常也会在这里被捕获，但是由于只循环一次，也不会重试
                     } catch (RemotingException e) {
                         endTimestamp = System.currentTimeMillis();
+                        //liqinglong: 根据【发送失败的耗时】更新【指数退避策略】的【延迟时间】
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, true);
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【远程调用】异常会重试
                         continue;
                     } catch (MQClientException e) {
                         endTimestamp = System.currentTimeMillis();
@@ -621,6 +642,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【客户端】异常会重试
                         continue;
                     } catch (MQBrokerException e) {
                         endTimestamp = System.currentTimeMillis();
@@ -628,6 +650,10 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         log.warn(String.format("sendKernelImpl exception, resend at once, InvokeID: %s, RT: %sms, Broker: %s", invokeID, endTimestamp - beginTimestampPrev, mq), e);
                         log.warn(msg.toString());
                         exception = e;
+                        //liqinglong: 【Broker】异常并非都需要重试
+                        //生产者中定义了一批需要重试的【MQBrokerException 异常的响应码】，只有这些响应码会重试
+                        //对于【流控异常 RemotingSysResponseCode.SYSTEM_BUSY】，就不会重试
+                        //liqinglongTODO: 同步发送默认会重试另一个 broker，那么【流控异常】应该仅仅是上一个 broker 发生了流控，按理说应该可以重试其他 broker 才对。反倒是异步发送会重试同一个 broker，却会重试？
                         if (this.defaultMQProducer.getRetryResponseCodes().contains(e.getResponseCode())) {
                             continue;
                         } else {
@@ -645,6 +671,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         throw e;
                     }
                 } else {
+                    //liqinglong: 如果没有【消息队列】可选，也不会再次重试
                     break;
                 }
             }
@@ -712,6 +739,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         }
     }
 
+    //liqinglong: 消息发送的真正实现方法
+    //内部调用了【this.mQClientFactory.getMQClientAPIImpl().sendMessage】去真正发送消息
+    //【异步发送】的【重试逻辑】在其中实现
     private SendResult sendKernelImpl(final Message msg,
         final MessageQueue mq,
         final CommunicationMode communicationMode,
@@ -856,7 +886,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                             context,
                             this);
                         break;
-                    case ONEWAY:
+                    case ONEWAY: //liqinglong: 此处表示和【SYNC】一个逻辑，但是在【this.mQClientFactory.getMQClientAPIImpl().sendMessage】中会有分支逻辑处理不同模式
                     case SYNC:
                         long costTimeSync = System.currentTimeMillis() - beginStartTime;
                         if (timeout < costTimeSync) {
@@ -1028,6 +1058,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     /**
      * KERNEL SYNC -------------------------------------------------------
      */
+    //liqinglong: 对于【指定队列的同步发送】，直接调用【sendKernelImpl】而不是【sendDefaultImpl】
+    //而对于【同步发送】，重试逻辑在【sendDefaultImpl】中通过【循环】实现
+    //因此【不会重试】
     public SendResult send(Message msg, MessageQueue mq)
         throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         return send(msg, mq, this.defaultMQProducer.getSendMsgTimeout());
@@ -1054,6 +1087,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     /**
      * KERNEL ASYNC -------------------------------------------------------
      */
+    //liqinglong: 对于【指定队列的异步发送】，直接调用【sendKernelImpl】而不是【sendDefaultImpl】
+    //但是因为【异步发送】重试逻辑在【sendKernelImpl】中通过递归实现
+    //因此【会按异步发送的逻辑重试】
     public void send(Message msg, MessageQueue mq, SendCallback sendCallback)
         throws MQClientException, RemotingException, InterruptedException {
         send(msg, mq, sendCallback, this.defaultMQProducer.getSendMsgTimeout());
@@ -1170,6 +1206,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 throw new RemotingTooMuchRequestException("sendSelectImpl call timeout");
             }
             if (mq != null) {
+                //【指定队列的异步发送和单向发送】，由于传递的【topicPublishInfo == null】，所以在【MQClientAPIImpl.onException】中不会选择【另一个 broker】，只会使用【同一个 broker】进行【重试】
                 return this.sendKernelImpl(msg, mq, communicationMode, sendCallback, null, timeout - costTime);
             } else {
                 throw new MQClientException("select message queue return null.", null);

@@ -262,7 +262,7 @@ public class StoreStatsService extends ServiceThread {
     }
 
     public long getPutMessageTimesTotal() {
-        //liqinglong: 【putMessageTopicTimesTotal】是一个以品【topic为键】【singlePutMessageTopicTimesTotal为值】的【map】
+        //liqinglong: 【putMessageTopicTimesTotal】是一个【topic为键】【singlePutMessageTopicTimesTotal为值】的【map】
         Map<String, LongAdder> map = putMessageTopicTimesTotal;
         //liqinglong: 对【putMessageTopicTimesTotal】中的所有【singlePutMessageTopicTimesTotal】求和以获取【所有topic在当前broker的的生产总量】
         //【singlePutMessageTopicTimesTotal】的赋值在【CommitLog.asyncPutMessage】中

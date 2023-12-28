@@ -436,6 +436,9 @@ public class MQClientAPIImpl {
 
     }
 
+    //liqinglong: 【同步发送】的方法
+    //无需传递【sendCallback】【topicPublishInfo】等参数
+    //同步发送在【DefaultMQProducerImpl.sendDefaultImpl】中选择【另一个 broker 的队列】，因此发送时无需【topicPublishInfo】
     public SendResult sendMessage(
         final String addr,
         final String brokerName,
@@ -449,6 +452,7 @@ public class MQClientAPIImpl {
         return sendMessage(addr, brokerName, msg, requestHeader, timeoutMillis, communicationMode, null, null, null, 0, context, producer);
     }
 
+    //liqinglong: 构造消息发送的【请求体】并调用【this.remotingClient】响应的方法实现真正发送
     public SendResult sendMessage(
         final String addr,
         final String brokerName,
@@ -486,6 +490,7 @@ public class MQClientAPIImpl {
 
         switch (communicationMode) {
             case ONEWAY:
+                //liqinglong: 【单向发送】没有重试逻辑
                 this.remotingClient.invokeOneway(addr, request, timeoutMillis);
                 return null;
             case ASYNC:
@@ -519,10 +524,15 @@ public class MQClientAPIImpl {
         final RemotingCommand request
     ) throws RemotingException, MQBrokerException, InterruptedException {
         RemotingCommand response = this.remotingClient.invokeSync(addr, request, timeoutMillis);
+        //liqinglong: 对于【同步发送】，如果 broker 的响应状态不是【success】，则在【NettyRemotingAbstract.invokeSyncImpl】中会将【response 设为 null】
+        //此处对【null】做拦截
+        //liqinglongTODO: 【channel.writeAndFlush】什么怎样判断是否【success】的？
         assert response != null;
         return this.processSendResponse(brokerName, msg, response, addr);
     }
 
+    //liqinglong: 异步发送
+    //【重试逻辑】在此方法中通过调用【onExceptionImpl】实现
     private void sendMessageAsync(
         final String addr,
         final String brokerName,
@@ -553,12 +563,14 @@ public class MQClientAPIImpl {
                                 context.getProducer().executeSendMessageHookAfter(context);
                             }
                         } catch (Throwable e) {
+                            //liqinglong: 如果传入的回调函数为【null】，则如果有响应，那么【响应处理过程任何异常都不会重试】
                         }
 
                         producer.updateFaultItem(brokerName, System.currentTimeMillis() - responseFuture.getBeginTimestamp(), false);
                         return;
                     }
-
+                    //liqinglong: 【异步发送】当【远程调用成功】但【response == null】会重试
+                    //liqinglongTODO: 问题是什么情况下会出现【response == null】？【broker 流控】在此场景之内吗？
                     if (response != null) {
                         try {
                             SendResult sendResult = MQClientAPIImpl.this.processSendResponse(brokerName, msg, response, addr);
@@ -571,18 +583,26 @@ public class MQClientAPIImpl {
                             try {
                                 sendCallback.onSuccess(sendResult);
                             } catch (Throwable e) {
+                                //liqinglong: 只要 broker 返回的响应不为【null】，且返回的状态在【processSendResponse】中校验通过
+                                //【ResponseCode.FLUSH_DISK_TIMEOUT、ResponseCode.FLUSH_SLAVE_TIMEOUT、ResponseCode.SLAVE_NOT_AVAILABLE、ResponseCode.SUCCESS】
+                                //即使生产者自定义的【回调函数】处理【broker响应结果】异常也不会重试
+                                //之所以要在这里捕获异常，是为了在处理完后调用【updateFaultItem】
                             }
 
                             producer.updateFaultItem(brokerName, System.currentTimeMillis() - responseFuture.getBeginTimestamp(), false);
                         } catch (Exception e) {
                             producer.updateFaultItem(brokerName, System.currentTimeMillis() - responseFuture.getBeginTimestamp(), true);
+                            //liqinglong: 只要 broker 返回的响应不为【null】，就算返回的状态在【processSendResponse】中校验不通过也不会重试
+                            //【needRetry = false】
                             onExceptionImpl(brokerName, msg, timeoutMillis - cost, request, sendCallback, topicPublishInfo, instance,
                                 retryTimesWhenSendFailed, times, e, context, false, producer);
                         }
                     } else {
+                        //liqinglong: 【异步发送】当【远程调用成功】但【response == null】且【回调函数不是 null】会重试
                         producer.updateFaultItem(brokerName, System.currentTimeMillis() - responseFuture.getBeginTimestamp(), true);
                         if (!responseFuture.isSendRequestOK()) {
                             MQClientException ex = new MQClientException("send request failed", responseFuture.getCause());
+                            //在此方法中处理所有异常并通过【递归调用】实现重试
                             onExceptionImpl(brokerName, msg, timeoutMillis - cost, request, sendCallback, topicPublishInfo, instance,
                                 retryTimesWhenSendFailed, times, ex, context, true, producer);
                         } else if (responseFuture.isTimeout()) {
@@ -601,11 +621,13 @@ public class MQClientAPIImpl {
         } catch (Exception ex) {
             long cost = System.currentTimeMillis() - beginStartTime;
             producer.updateFaultItem(brokerName, cost, true);
+            //liqinglong: 【异步发送】远程调用异常也会重试
             onExceptionImpl(brokerName, msg, timeoutMillis - cost, request, sendCallback, topicPublishInfo, instance,
                     retryTimesWhenSendFailed, times, ex, context, true, producer);
         }
     }
 
+    //liqinglong: 【异步发送】异常处理和【重试】
     private void onExceptionImpl(final String brokerName,
         final Message msg,
         final long timeoutMillis,
@@ -623,7 +645,11 @@ public class MQClientAPIImpl {
         int tmp = curTimes.incrementAndGet();
         if (needRetry && tmp <= timesTotal) {
             String retryBrokerName = brokerName;//by default, it will send to the same broker
+            //liqinglong: 【指定队列的异步发送】在【DefaultMQProducerImpl.sendSelectImpl】中传递的【topicPublishInfo == null】，因此不会选择其他 broker
+            //liqinglongTODO: 【不指定队列的异步发送】在【DefaultMQProducerImpl.sendDefaultImpl】中传递的【topicPublishInfo != null】,所以按理说会选择【另一个 broker】
+            //但是【features.md】中说【异步重试不会选择其他broker，仅在同一个broker上做重试，不保证消息不丢】？
             if (topicPublishInfo != null) { //select one message queue accordingly, in order to determine which broker to send
+                //liqinglong: 此方法中有【指数退避策略】，需手动开启
                 MessageQueue mqChosen = producer.selectOneMessageQueue(topicPublishInfo, brokerName);
                 retryBrokerName = mqChosen.getBrokerName();
             }
@@ -631,6 +657,7 @@ public class MQClientAPIImpl {
             log.warn("async send msg by retry {} times. topic={}, brokerAddr={}, brokerName={}", tmp, msg.getTopic(), addr,
                     retryBrokerName, e);
             request.setOpaque(RemotingCommand.createNewRequestId());
+            //liqinglong: 【递归调用】实现重试
             sendMessageAsync(addr, retryBrokerName, msg, timeoutMillis, request, sendCallback, topicPublishInfo, instance,
                     timesTotal, curTimes, context, producer);
         } else {

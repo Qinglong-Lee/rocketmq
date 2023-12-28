@@ -258,7 +258,7 @@ public abstract class RebalanceImpl {
             }
             case CLUSTERING: {
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
-                //liqinglong: 先去【broker】更新【组内所有客户信息】
+                //liqinglong: 先去【broker】更新【组内所有客户端信息】
                 List<String> cidAll = this.mQClientFactory.findConsumerIdList(topic, consumerGroup);
                 if (null == mqSet) {
                     if (!topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
@@ -347,7 +347,7 @@ public abstract class RebalanceImpl {
 
             if (mq.getTopic().equals(topic)) {
                 if (!mqSet.contains(mq)) {
-                    //liqinglong: 标识此【处理队列】以丢弃
+                    //liqinglong: 标识此【处理队列】已丢弃
                     //liqinglongTODO: 如果【removeUnnecessaryMessageQueue】失败，【it.remove()】也就不会执行，那此【处理队列】会怎样？
                     pq.setDropped(true);
                     if (this.removeUnnecessaryMessageQueue(mq, pq)) {

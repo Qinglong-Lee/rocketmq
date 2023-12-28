@@ -90,8 +90,10 @@ public class Permission {
     }
 
     //liqinglong: 更新【ACL】的【topic和group权限】时的验证
-    //对于【topic】和【group】至少都至少需要保留一个权限配置，不能为空
-    //要删除所有权限需要删除整个【ACL】
+	//如果传递的【null】或者【empty list】则验证通过
+	//但是由于【UtilAll.split】的 bug，【删除最后一个 perm】的时候这里会传入一个【size = 1 && list.get(0) = ""】的 list，最终导致验证失败
+    //而传递一个【null】在【PlainPermissionManager.createAclAccessConfigMap】中又不会更新
+    //所以对于【topic】和【group】至少都至少需要保留一个权限配置，要删除所有权限只能删除整个【ACL】
     public static void checkResourcePerms(List<String> resources) {
         if (resources == null || resources.isEmpty()) {
             return;

@@ -606,6 +606,11 @@ public class UtilAll {
         return str.toString();
     }
 
+    //liqinglongTODO: 这里感觉有个bug
+    //【当 str = “”】 时，【str.split(splitter)】返回的是【长度为 1，第一元素值为空的数组】，即 [""]
+    //最终转换为【list】变为一个【size = 1，第一个元素为空的 list】
+    //按理说应该返回一个【empty list】才对
+    //这个 bug 也导致了【ACL topic/group perms 删除最后一个元素时报错】
     public static List<String> split(String str, String splitter) {
         if (str == null) {
             return null;

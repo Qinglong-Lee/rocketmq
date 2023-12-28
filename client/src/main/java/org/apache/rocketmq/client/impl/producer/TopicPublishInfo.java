@@ -66,7 +66,9 @@ public class TopicPublishInfo {
         this.haveTopicRouterInfo = haveTopicRouterInfo;
     }
 
+    //liqinglong: 为消息发送选择一个消息队列
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
+        //liqinglong: 如果【lastBrokerName】是 null，表示不需要排除【上一次发送的 broker】，随机选择
         if (lastBrokerName == null) {
             return selectOneMessageQueue();
         } else {
@@ -76,6 +78,7 @@ public class TopicPublishInfo {
                 if (pos < 0)
                     pos = 0;
                 MessageQueue mq = this.messageQueueList.get(pos);
+                //liqinglong: lastBrokerName】不是 null，表示需要排除【上一次发送的 broker】，因为上次发送失败，为了高可用，应该首选另一个
                 if (!mq.getBrokerName().equals(lastBrokerName)) {
                     return mq;
                 }
