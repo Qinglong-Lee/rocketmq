@@ -347,7 +347,7 @@ public abstract class RebalanceImpl {
 
             if (mq.getTopic().equals(topic)) {
                 if (!mqSet.contains(mq)) {
-                    //liqinglong: 标识此【处理队列】以丢弃
+                    //liqinglong: 标识此【处理队列】已丢弃
                     //liqinglongTODO: 如果【removeUnnecessaryMessageQueue】失败，【it.remove()】也就不会执行，那此【处理队列】会怎样？
                     pq.setDropped(true);
                     if (this.removeUnnecessaryMessageQueue(mq, pq)) {
