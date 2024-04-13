@@ -189,7 +189,10 @@ public abstract class NettyRemotingAbstract {
      * @param ctx channel handler context.
      * @param cmd request command.
      */
+    //liqinglong: netty 服务器处理请求并返回响应
+    //rocketmq 将【不同业务】的请求用【不同线程池】处理，实现【线程隔离】
     public void processRequestCommand(final ChannelHandlerContext ctx, final RemotingCommand cmd) {
+        //liqinglong: 先根据【请求码】获取【请求处理器】和对应的【线程池】
         final Pair<NettyRequestProcessor, ExecutorService> matched = this.processorTable.get(cmd.getCode());
         final Pair<NettyRequestProcessor, ExecutorService> pair = null == matched ? this.defaultRequestProcessor : matched;
         final int opaque = cmd.getOpaque();
@@ -201,6 +204,7 @@ public abstract class NettyRemotingAbstract {
                     try {
                         String remoteAddr = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
                         doBeforeRpcHooks(remoteAddr, cmd);
+                        //liqinglong: 由于是【多线程异步请求处理】，所以处理完毕使用【回调函数】来返回【响应】
                         final RemotingResponseCallback callback = new RemotingResponseCallback() {
                             @Override
                             public void callback(RemotingCommand response) {
@@ -211,6 +215,8 @@ public abstract class NettyRemotingAbstract {
                                         response.markResponseType();
                                         response.setSerializeTypeCurrentRPC(cmd.getSerializeTypeCurrentRPC());
                                         try {
+                                            //liqinglong: 请求和响应都是用【writeAndFlush】传出数据
+                                            //响应成功表示此次远程调用成功
                                             ctx.writeAndFlush(response);
                                         } catch (Throwable e) {
                                             log.error("process request over, but response failed", e);
@@ -253,6 +259,7 @@ public abstract class NettyRemotingAbstract {
             }
 
             try {
+                //liqinglong: 装配任务并扔进对应线程池执行
                 final RequestTask requestTask = new RequestTask(run, ctx.channel(), cmd);
                 pair.getObject2().submit(requestTask);
             } catch (RejectedExecutionException e) {
@@ -293,7 +300,7 @@ public abstract class NettyRemotingAbstract {
             responseFuture.setResponseCommand(cmd);
 
             responseTable.remove(opaque);
-
+            //liqinglong: 对于异步请求，【responseFuture】中会定义【回调函数 invokeCallback】
             if (responseFuture.getInvokeCallback() != null) {
                 executeInvokeCallback(responseFuture);
             } else {
@@ -409,16 +416,24 @@ public abstract class NettyRemotingAbstract {
     public RemotingCommand invokeSyncImpl(final Channel channel, final RemotingCommand request,
         final long timeoutMillis)
         throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException {
+        //liqinglong: 【opaque】变量指对一个请求做唯一编码，在一个【RemotingCommand】中通过【requestId】原子自增获得
+        //【opaque = requestId.getAndIncrement()】
         final int opaque = request.getOpaque();
 
         try {
             final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis, null, null);
             this.responseTable.put(opaque, responseFuture);
             final SocketAddress addr = channel.remoteAddress();
+            //liqinglong: 【addListener】会注册一个【监听器】，用于监听远程请求的响应结果
+            //在【NettyRemoingClient】和【NettyRemotingServer】的【start】方法中，初始化 Netty 客户端和服务器的时候会添加【handler 处理器】
+            //【handler】的作用是在请求到达（client）或响应到达（server）后，执行业务逻辑
+            //此处是同步请求，所以【responseFuture】中没有定义【回调函数】，在【handler】也没有【回调函数】可执行
+            //【listener】先于【handler】执行
+            //对于客户端，【listener】不仅处理正常响应，还处理异常响应；而【handler】只有在正常的时候才会被调用
             channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture f) throws Exception {
-                    //liqinglongTODO: 【channel.writeAndFlush】什么怎样判断是否【success】的？
+                    //liqinglong: netty 服务器接受请求，处理请求然后响应【writeAndFlush(response)】成功
                     if (f.isSuccess()) {
                         responseFuture.setSendRequestOK(true);
                         return;
@@ -462,10 +477,16 @@ public abstract class NettyRemotingAbstract {
                 once.release();
                 throw new RemotingTimeoutException("invokeAsyncImpl call timeout");
             }
-
+            //liqinglong: 对于异步请求，【responseFuture】中会定义【回调函数 invokeCallback】，【handler】中会多线程执行【回调函数】
             final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis - costTime, invokeCallback, once);
             this.responseTable.put(opaque, responseFuture);
             try {
+                //liqinglong: 【addListener】会注册一个【监听器】，用于监听远程请求的响应结果
+                //在【NettyRemoingClient】和【NettyRemotingServer】的【start】方法中，初始化 Netty 客户端和服务器的时候会添加【handler 处理器】
+                //【handler】的作用是在请求到达（client）或响应到达（server）后，执行业务逻辑
+                //此处是异步请求，【responseFuture】中会定义【回调函数 invokeCallback】，【handler】中会多线程执行【回调函数】
+                //【listener】先于【handler】执行
+                //对于客户端，【listener】不仅处理正常响应，还处理异常响应；而【handler】只有在正常的时候才会被调用
                 channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture f) throws Exception {

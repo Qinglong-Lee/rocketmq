@@ -184,6 +184,13 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                             log.warn("Connections are insecure as SSLContext is null!");
                         }
                     }
+                    //liqinglong: 在远程调用开始到响应到达的整个过程中，在一个【线程组】中顺序执行一系列【处理器】
+                    //以扩展远程调用过程的各个生命周期节点
+                    //不同的处理器对应不同的生命周期节点
+                    //【NettyEncoder】用于请求前对【请求数据的编码】
+                    //【NettyDecoder】用于响应到达后对【响应数据的解码】
+                    //【NettyConnectManageHandler】用于扩展连接过程
+                    //【NettyClientHandler】定义【正常响应】后的【业务逻辑】
                     pipeline.addLast(
                         defaultEventExecutorGroup,
                         new NettyEncoder(),
@@ -461,11 +468,16 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                         this.namesrvAddrChoosed.set(newAddr);
                         log.info("new name server is chosen. OLD: {} , NEW: {}. namesrvIndex = {}", addr, newAddr, namesrvIndex);
                         //liqinglong: 创建【连接】并缓存到【channelTables】
+                        //注意：这里创建连接的时候就会去判断此连接是否可用，如果不可用则会返回【null】，并不是在真正去请求远程服务的时候才能判断连接的可用性
                         Channel channelNew = this.createChannel(newAddr);
+                        //liqinglong: 如果连接不可用，则会循环下一个【nameserver 地址】来创建连接
+                        //所以当配置了多个【nameserver】，会尝试每一个，知道有一个可用
+                        //而且只要客户端没有【shutdown】，就会在【定时任务中】不断地用配置的【nameserver 地址】尝试获取【路由信息】
                         if (channelNew != null) {
                             return channelNew;
                         }
                     }
+                    //liqinglong: 如果都失败了，就抛出【RemotingConnectException】
                     throw new RemotingConnectException(addrList.toString());
                 }
             } finally {
@@ -478,6 +490,8 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
         return null;
     }
 
+    //liqinglong: 创建【RPC 通道】
+    //从方法不仅会为指定地址创建一个通道，还会检测此通道【是否有效】，即提前测试连通性【cw.isOK()】
     private Channel createChannel(final String addr) throws InterruptedException {
         ChannelWrapper cw = this.channelTables.get(addr);
         if (cw != null && cw.isOK()) {
@@ -519,6 +533,8 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
 
         if (cw != null) {
             ChannelFuture channelFuture = cw.getChannelFuture();
+            //liqinglong: 由于 Bootstrap 的 connect 方法创建连接时只是返回一个 Future，需要同步等待连接成功建
+            //故通常需要调用 ChannelFuture 的 awaitUniteruptibly(连接建立允许的超时时间)，等待连接成功建立
             if (channelFuture.awaitUninterruptibly(this.nettyClientConfig.getConnectTimeoutMillis())) {
                 if (cw.isOK()) {
                     log.info("createChannel: connect remote host[{}] success, {}", addr, channelFuture.toString());
@@ -642,9 +658,9 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             return channelFuture;
         }
     }
-
+    //liqinglong: netty 客户端的响应处理类
     class NettyClientHandler extends SimpleChannelInboundHandler<RemotingCommand> {
-
+        //liqinglong: 正确响应时会调用此方法执行【响应回调逻辑】
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, RemotingCommand msg) throws Exception {
             processMessageReceived(ctx, msg);

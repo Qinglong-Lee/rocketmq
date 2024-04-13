@@ -28,16 +28,12 @@ import java.net.NetworkInterface;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.zip.CRC32;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
+
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.validator.routines.InetAddressValidator;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
@@ -614,6 +610,10 @@ public class UtilAll {
     public static List<String> split(String str, String splitter) {
         if (str == null) {
             return null;
+        }
+
+        if (StringUtils.isBlank(str)) {
+            return Collections.EMPTY_LIST;
         }
 
         String[] addrArray = str.split(splitter);

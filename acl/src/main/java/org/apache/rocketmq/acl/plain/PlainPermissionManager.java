@@ -84,6 +84,8 @@ public class PlainPermissionManager {
     public PlainPermissionManager() {
         this.defaultAclDir = MixAll.dealFilePath(fileHome + File.separator + "conf" + File.separator + "acl");
         //liqinglong: 可以通过【filehome】或【rocketmq.acl.plain.file】来加载不同的【ACL】，用于【ACL数据隔离】
+        //liqinglong: 注意：这里用【MixAll.dealFilePath】对路径做了【反斜杠转换处理】，而这个方法只用于 ACL
+        //liqinglongTODO: 为什么 ACL 要做反斜杠处理，这导致在配置【ROCKETMQ_HOME】的时候必须要用反斜杠，否则对 ACL 的一些操作会报错，因为会校验路径，比如【updateGlobalWhiteAddrsConf】
         this.defaultAclFile = MixAll.dealFilePath(fileHome + File.separator + System.getProperty("rocketmq.acl.plain.file", "conf/plain_acl.yml"));
         load();
         watch();

@@ -208,6 +208,13 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline()
+                        //liqinglong: 在请求到达服务器，处理请求到响应的整个过程中，在一个【线程组】中顺序执行一系列【处理器】
+                        //以扩展远程服务响应的各个生命周期节点
+                        //不同的处理器对应不同的生命周期节点
+                        //【NettyDecoder】用于请求到达后对【请求数据的解码】
+                        //【NettyEncoder】用于响应前对【响应数据的编码】
+                        //【NettyConnectManageHandler】用于扩展连接过程
+                        //【NettyServerHandler】定义服务器处理请求的【业务逻辑】
                             .addLast(defaultEventExecutorGroup, HANDSHAKE_HANDLER_NAME, handshakeHandler)
                             .addLast(defaultEventExecutorGroup,
                                 encoder,
@@ -424,10 +431,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             ctx.fireChannelRead(msg.retain());
         }
     }
-
+    //liqinglong: netty 服务器请求处理类
     @ChannelHandler.Sharable
     class NettyServerHandler extends SimpleChannelInboundHandler<RemotingCommand> {
-
+        //liqinglong: 请求到达后会调用此方法处理请求
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, RemotingCommand msg) throws Exception {
             processMessageReceived(ctx, msg);
